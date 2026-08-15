@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { rupees } from "../lib/api.js";
 import { useCart } from "../context/CartContext.jsx";
+import FinanceCard from "./FinanceCard.jsx";
 
 const EMOJI = {
   cleaning: "🧹", plumbing: "🔧", painting: "🎨", "appliance-repair": "🛠️",
@@ -10,6 +11,10 @@ const EMOJI = {
 export default function ItemCard({ item, onAdded }) {
   const navigate = useNavigate();
   const { add } = useCart();
+
+  // Financial products can't be added to a cart — they have their own card and route.
+  if (item.type === "financial") return <FinanceCard product={item} />;
+
   const isProduct = item.type === "product";
   const outOfStock = isProduct && (item.stock_qty == null || item.stock_qty <= 0);
 

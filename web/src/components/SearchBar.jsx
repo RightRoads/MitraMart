@@ -34,6 +34,12 @@ export default function SearchBar() {
     return () => document.removeEventListener("click", onClick);
   }, []);
 
+  /** Financial products live on their own detail route, not /item/:slug. */
+  function openSuggestion(s) {
+    setOpen(false);
+    navigate(s.type === "financial" ? `/finance/product/${s.slug}` : `/item/${s.slug}`);
+  }
+
   function submit(term) {
     const value = term ?? q;
     if (!value.trim()) return;
@@ -48,13 +54,13 @@ export default function SearchBar() {
         onChange={(e) => setQ(e.target.value)}
         onFocus={() => suggestions.length && setOpen(true)}
         onKeyDown={(e) => e.key === "Enter" && submit()}
-        placeholder="Search services & products — e.g. cleaning, fridge, cleaner…"
+        placeholder="Search services, products & finance — e.g. cleaning, fridge, credit card…"
         aria-label="Search"
       />
       {open && suggestions.length > 0 && (
         <div className="suggestions">
           {suggestions.map((s) => (
-            <button key={s.id} onClick={() => navigate(`/item/${s.slug}`)}>
+            <button key={s.id} onClick={() => openSuggestion(s)}>
               <span className={`pill ${s.type}`}>{s.type}</span>
               {s.name}
             </button>

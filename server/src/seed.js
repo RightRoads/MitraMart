@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { pool, withTransaction } from "./lib/db.js";
+import { financeCategories, providers, financialProducts } from "./seed-finance.js";
 
 const categories = [
   { name: "Cleaning", slug: "cleaning", kind: "service", icon: "🧹" },
@@ -37,6 +38,11 @@ function slugify(s) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 }
 
+/** Money in the seed data is written in rupees; the DB stores paise. */
+function rupeesToPaise(rupees) {
+  return rupees == null ? null : Math.round(rupees * 100);
+}
+
 async function main() {
   await withTransaction(async (c) => {
     console.log("[seed] users...");
@@ -53,7 +59,7 @@ async function main() {
 
     console.log("[seed] categories...");
     const catId = {};
-    for (const cat of categories) {
+    for (const cat of [...categories, ...financeCategories]) {
       const r = await c.query(
         `INSERT INTO categories (name, slug, kind, icon) VALUES ($1,$2,$3,$4)
          RETURNING id`,
@@ -75,6 +81,46 @@ async function main() {
           [r.rows[0].id, stock]
         );
       }
+    }
+
+    console.log("[seed] providers...");
+    const providerId = {};
+    for (const p of providers) {
+      const r = await c.query(
+        `INSERT INTO providers (name, slug, kind) VALUES ($1,$2,$3) RETURNING id`,
+        [p.name, p.slug, p.kind]
+      );
+      providerId[p.slug] = r.rows[0].id;
+    }
+
+    console.log("[seed] financial products...");
+    for (const p of financialProducts) {
+      const item = await c.query(
+        `INSERT INTO catalog_items (type, name, slug, description, category_id, price_cents, rating)
+         VALUES ('financial',$1,$2,$3,$4,$5,$6) RETURNING id`,
+        [p.name, slugify(p.name), p.description, catId[p.category], rupeesToPaise(p.price), p.rating]
+      );
+      await c.query(
+        `INSERT INTO financial_products (
+           catalog_item_id, provider_id, subtype,
+           interest_rate_min, interest_rate_max, tenure_min_months, tenure_max_months,
+           amount_min_cents, amount_max_cents, processing_fee_pct,
+           joining_fee_cents, annual_fee_cents,
+           premium_from_cents, coverage_cents, policy_term_years,
+           min_age, max_age, min_income_cents, min_credit_score,
+           features, key_benefits, exclusions, commission_pct
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
+        [
+          item.rows[0].id, providerId[p.provider], p.subtype,
+          p.interest_rate_min ?? null, p.interest_rate_max ?? null,
+          p.tenure_min_months ?? null, p.tenure_max_months ?? null,
+          rupeesToPaise(p.amount_min), rupeesToPaise(p.amount_max), p.processing_fee_pct ?? null,
+          rupeesToPaise(p.joining_fee), rupeesToPaise(p.annual_fee),
+          rupeesToPaise(p.premium_from), rupeesToPaise(p.coverage), p.policy_term_years ?? null,
+          p.min_age ?? null, p.max_age ?? null, rupeesToPaise(p.min_income), p.min_credit_score ?? null,
+          p.features ?? {}, p.key_benefits ?? [], p.exclusions ?? [], p.commission_pct ?? 0,
+        ]
+      );
     }
   });
   console.log("[seed] done.");

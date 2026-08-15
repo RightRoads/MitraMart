@@ -9,6 +9,8 @@ DROP TABLE IF EXISTS order_items CASCADE;
 DROP TABLE IF EXISTS orders CASCADE;
 DROP TABLE IF EXISTS addresses CASCADE;
 DROP TABLE IF EXISTS inventory CASCADE;
+DROP TABLE IF EXISTS financial_products CASCADE;
+DROP TABLE IF EXISTS providers CASCADE;
 DROP TABLE IF EXISTS catalog_items CASCADE;
 DROP TABLE IF EXISTS categories CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
@@ -27,18 +29,20 @@ CREATE TABLE categories (
   id    SERIAL PRIMARY KEY,
   name  TEXT NOT NULL,
   slug  TEXT UNIQUE NOT NULL,
-  kind  TEXT NOT NULL DEFAULT 'both' CHECK (kind IN ('service','product','both')),
+  kind  TEXT NOT NULL DEFAULT 'both' CHECK (kind IN ('service','product','financial','both')),
   icon  TEXT
 );
 
 CREATE TABLE catalog_items (
   id            SERIAL PRIMARY KEY,
-  type          TEXT NOT NULL CHECK (type IN ('service','product')),
+  type          TEXT NOT NULL CHECK (type IN ('service','product','financial')),
   name          TEXT NOT NULL,
   slug          TEXT UNIQUE NOT NULL,
   description   TEXT NOT NULL DEFAULT '',
   category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-  price_cents   INTEGER NOT NULL DEFAULT 0,     -- price in paise (INR * 100)
+  price_cents   INTEGER NOT NULL DEFAULT 0,     -- price in paise (INR * 100). For financial
+                                                -- items this is indicative only: the annual
+                                                -- fee (cards) or starting premium (insurance).
   duration_min  INTEGER,                        -- services only
   image_url     TEXT,
   rating        NUMERIC(2,1) NOT NULL DEFAULT 4.5,
@@ -59,6 +63,63 @@ CREATE TABLE inventory (
   stock_qty       INTEGER NOT NULL DEFAULT 0,
   low_stock_at    INTEGER NOT NULL DEFAULT 5
 );
+
+-- ---------------------------------------------------------------------------
+-- Financial products (insurance, loans, credit cards) from banks and insurers.
+--
+-- A financial product IS a catalog_item (type = 'financial') so unified search,
+-- categories and favorites work unchanged. The bank/insurer-specific attributes
+-- used for comparison and eligibility live in financial_products below.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE providers (
+  id         SERIAL PRIMARY KEY,
+  name       TEXT NOT NULL,
+  slug       TEXT UNIQUE NOT NULL,
+  kind       TEXT NOT NULL CHECK (kind IN ('bank','nbfc','insurer')),
+  logo_url   TEXT,
+  active     BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE financial_products (
+  catalog_item_id    INTEGER PRIMARY KEY REFERENCES catalog_items(id) ON DELETE CASCADE,
+  provider_id        INTEGER NOT NULL REFERENCES providers(id) ON DELETE RESTRICT,
+  subtype            TEXT NOT NULL CHECK (subtype IN ('insurance','loan','credit_card')),
+
+  -- Comparison attributes. Only the columns relevant to a subtype are set;
+  -- the rest stay NULL (a loan has no coverage, a card has no tenure).
+  interest_rate_min  NUMERIC(5,2),   -- % p.a. — loans, credit cards
+  interest_rate_max  NUMERIC(5,2),
+  tenure_min_months  INTEGER,        -- loans
+  tenure_max_months  INTEGER,
+  amount_min_cents   BIGINT,         -- loan amount range / insurance sum assured range
+  amount_max_cents   BIGINT,
+  processing_fee_pct NUMERIC(5,2),   -- loans
+  joining_fee_cents  INTEGER,        -- credit cards
+  annual_fee_cents   INTEGER,
+  premium_from_cents INTEGER,        -- insurance — starting annual premium
+  coverage_cents     BIGINT,         -- insurance — sum assured
+  policy_term_years  INTEGER,
+
+  -- Eligibility, used to filter and pre-qualify.
+  min_age            INTEGER,
+  max_age            INTEGER,
+  min_income_cents   BIGINT,         -- annual income
+  min_credit_score   INTEGER,
+
+  -- Per-subtype extras that don't deserve a column each: cashback %, lounge
+  -- access, riders, claim settlement ratio, reward rate, fuel surcharge waiver…
+  features           JSONB NOT NULL DEFAULT '{}',
+  key_benefits       TEXT[] NOT NULL DEFAULT '{}',
+  exclusions         TEXT[] NOT NULL DEFAULT '{}',
+
+  -- What MitraMart earns when an application is approved.
+  commission_pct     NUMERIC(5,2) NOT NULL DEFAULT 0
+);
+
+CREATE INDEX financial_subtype_idx  ON financial_products (subtype);
+CREATE INDEX financial_provider_idx ON financial_products (provider_id);
 
 CREATE TABLE addresses (
   id       SERIAL PRIMARY KEY,

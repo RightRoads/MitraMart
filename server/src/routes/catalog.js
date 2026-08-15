@@ -18,7 +18,7 @@ router.get("/search", async (req, res) => {
   const where = ["ci.active = TRUE"];
   const params = [];
 
-  if (type === "service" || type === "product") {
+  if (["service", "product", "financial"].includes(type)) {
     params.push(type);
     where.push(`ci.type = $${params.length}`);
   }
@@ -39,13 +39,16 @@ router.get("/search", async (req, res) => {
       `(ci.search_tsv @@ plainto_tsquery('english', ${qParam})
         OR ci.name ILIKE '%' || ${qParam} || '%'
         OR c.name ILIKE '%' || ${qParam} || '%'
+        OR pr.name ILIKE '%' || ${qParam} || '%'
         OR similarity(ci.name, ${qParam}) > 0.2
-        OR similarity(coalesce(c.name,''), ${qParam}) > 0.3)`
+        OR similarity(coalesce(c.name,''), ${qParam}) > 0.3
+        OR similarity(coalesce(pr.name,''), ${qParam}) > 0.3)`
     );
     rankSelect = `GREATEST(
         ts_rank(ci.search_tsv, plainto_tsquery('english', ${qParam})),
         similarity(ci.name, ${qParam}),
-        similarity(coalesce(c.name,''), ${qParam})
+        similarity(coalesce(c.name,''), ${qParam}),
+        similarity(coalesce(pr.name,''), ${qParam})
       ) AS rank`;
     orderBy = "rank DESC, ci.rating DESC";
   }
@@ -59,10 +62,15 @@ router.get("/search", async (req, res) => {
            ci.duration_min, ci.image_url, ci.rating,
            c.name AS category_name, c.slug AS category_slug,
            inv.stock_qty,
+           fp.subtype, fp.interest_rate_min, fp.annual_fee_cents, fp.premium_from_cents,
+           fp.coverage_cents,
+           pr.name AS provider_name, pr.slug AS provider_slug,
            ${rankSelect}
     FROM catalog_items ci
     LEFT JOIN categories c ON c.id = ci.category_id
     LEFT JOIN inventory inv ON inv.catalog_item_id = ci.id
+    LEFT JOIN financial_products fp ON fp.catalog_item_id = ci.id
+    LEFT JOIN providers pr ON pr.id = fp.provider_id
     WHERE ${where.join(" AND ")}
     ORDER BY ${orderBy}
     LIMIT 60`;
@@ -75,11 +83,22 @@ router.get("/suggest", async (req, res) => {
   const q = (req.query.q || "").trim();
   if (!q) return res.json([]);
   const r = await query(
-    `SELECT id, name, type, slug
-     FROM catalog_items
-     WHERE active = TRUE
-       AND (name ILIKE '%' || $1 || '%' OR similarity(name, $1) > 0.2)
-     ORDER BY similarity(name, $1) DESC, name ASC
+    `SELECT ci.id, ci.name, ci.type, ci.slug
+     FROM catalog_items ci
+     LEFT JOIN categories c ON c.id = ci.category_id
+     LEFT JOIN financial_products fp ON fp.catalog_item_id = ci.id
+     LEFT JOIN providers pr ON pr.id = fp.provider_id
+     WHERE ci.active = TRUE
+       AND (ci.name ILIKE '%' || $1 || '%'
+            OR c.name ILIKE '%' || $1 || '%'
+            OR pr.name ILIKE '%' || $1 || '%'
+            OR similarity(ci.name, $1) > 0.2
+            OR similarity(coalesce(c.name,''), $1) > 0.3
+            OR similarity(coalesce(pr.name,''), $1) > 0.3)
+     ORDER BY GREATEST(
+              similarity(ci.name, $1),
+              similarity(coalesce(c.name,''), $1),
+              similarity(coalesce(pr.name,''), $1)) DESC, ci.name ASC
      LIMIT 8`,
     [q]
   );
@@ -88,10 +107,12 @@ router.get("/suggest", async (req, res) => {
 
 router.get("/items/:slug", async (req, res) => {
   const r = await query(
-    `SELECT ci.*, c.name AS category_name, c.slug AS category_slug, inv.stock_qty
+    `SELECT ci.*, c.name AS category_name, c.slug AS category_slug, inv.stock_qty,
+            fp.subtype
      FROM catalog_items ci
      LEFT JOIN categories c ON c.id = ci.category_id
      LEFT JOIN inventory inv ON inv.catalog_item_id = ci.id
+     LEFT JOIN financial_products fp ON fp.catalog_item_id = ci.id
      WHERE ci.slug = $1`,
     [req.params.slug]
   );

@@ -8,6 +8,9 @@ import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
 import MyOrders from "./pages/MyOrders.jsx";
 import Admin from "./pages/Admin.jsx";
+import FinanceList from "./pages/FinanceList.jsx";
+import FinanceProduct from "./pages/FinanceProduct.jsx";
+import FinanceCompare from "./pages/FinanceCompare.jsx";
 import { useAuth } from "./context/AuthContext.jsx";
 
 function Protected({ children, staff }) {
@@ -27,6 +30,9 @@ export default function App() {
         <Route path="/search" element={<SearchResults />} />
         <Route path="/item/:slug" element={<ItemDetail />} />
         <Route path="/cart" element={<Cart />} />
+        <Route path="/finance/compare" element={<FinanceCompare />} />
+        <Route path="/finance/product/:slug" element={<FinanceProduct />} />
+        <Route path="/finance/:subtype" element={<FinanceList />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/orders" element={<Protected><MyOrders /></Protected>} />
