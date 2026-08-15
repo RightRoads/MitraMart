@@ -39,13 +39,14 @@ export default function SearchResults() {
   return (
     <div className="container">
       <h2 className="section-title">
-        {q ? `Results for “${q}”` : category ? `Category: ${category}` : "All services & products"}
+        {q ? `Results for “${q}”` : category ? `Category: ${category}` : "All services, products & finance"}
       </h2>
 
       <div className="chips">
         <button className={`chip ${!type ? "active" : ""}`} onClick={() => setParam("type", "")}>All</button>
         <button className={`chip ${type === "service" ? "active" : ""}`} onClick={() => setParam("type", "service")}>Services</button>
         <button className={`chip ${type === "product" ? "active" : ""}`} onClick={() => setParam("type", "product")}>Products</button>
+        <button className={`chip ${type === "financial" ? "active" : ""}`} onClick={() => setParam("type", "financial")}>Finance</button>
         <span className="spacer" />
         <select className="chip" value={sort} onChange={(e) => setParam("sort", e.target.value)}>
           <option value="">Sort: Relevance</option>
